@@ -20,6 +20,23 @@ pub fn build(b: *std.Build) void {
         .target = b.resolveTargetQuery(target_query),
         .optimize = optimize,
     });
+    kernel.setLinkerScript(.{ .cwd_relative = "./linker.ld" });
+    kernel.addAssemblyFile(.{ .cwd_relative = "./boot/boot.s" });
 
     b.installArtifact(kernel);
+    const kernel_step = b.step("kernel", "Build the kernel");
+    kernel_step.dependOn(&kernel.step);
+
+    const run_cmd = b.addSystemCommand(&.{
+        "qemu-system-i386",
+        "-kernel",
+        "zig-out/bin/yo.elf",
+        "-display",
+        "gtk,zoom-to-fit=on",
+        "-s",
+    });
+    run_cmd.step.dependOn(kernel_step);
+
+    const run_step = b.step("run", "Run the os");
+    run_step.dependOn(&run_cmd.step);
 }
