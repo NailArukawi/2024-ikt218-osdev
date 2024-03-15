@@ -1,10 +1,20 @@
 ENTRY(_start)
- 
+
+VERSION {
+	VERS_1.0 {
+		local:
+			stack_bottom;
+	};
+}
+
 SECTIONS {
 	. = 1M;
- 
-	.text : ALIGN(4K) {
+	
+	.multiboot : ALIGN(4K) {
 		KEEP(*(.multiboot))
+	}
+
+	.text : ALIGN(4K) {
 		*(.text .text.*)
 	}
  

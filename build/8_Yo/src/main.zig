@@ -1,12 +1,22 @@
 const std = @import("std");
+const tty = @import("tty.zig");
+const gdt = @import("gdt.zig");
+const idt = @import("idt.zig");
+const x86 = @import("x86.zig");
+const entry = @import("entry.zig");
+const keyboard = @import("keyboard.zig");
 
-const MAGIC: i32 = 0x1BADB002;
-const FLAGS: i32 = (1 << 0) | (1 << 1);
+pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    tty.panic("{s}", .{message});
+}
 
-const MultibootHeader = extern struct { magic: i32 = 0x1BADB002, flags: i32 = FLAGS, checksum: i32 = -(MAGIC + FLAGS) };
+pub export fn kernelMain() noreturn {
+    tty.init();
+    gdt.init();
+    idt.init();
+    keyboard.init();
+    x86.sti(); // enable interupts
 
-export var multiboot align(4) linksection(".multiboot") = MultibootHeader{};
-
-export fn kernelMain() noreturn {
+    tty.print("Hello, sludracks!\n\tthis is Yo!\n", .{});
     while (true) {}
 }
