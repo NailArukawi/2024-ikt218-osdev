@@ -13,9 +13,9 @@ pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noretu
 
 pub export fn kernelMain() noreturn {
     tty.init();
-    memory.init();
     gdt.init();
     idt.init();
+    memory.init();
     keyboard.init();
     memory.initPaging() catch @panic("Failed to init paging!");
     x86.sti(); // enable interupts

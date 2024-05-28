@@ -27,7 +27,7 @@ pub fn init() void {
     low = MemoryStack.createAt(kernel_end, low_size);
     high = MemoryStack.createAt(kernel_end + MemoryStack.sizeOf(low_size), high_size);
 
-    var cursor: usize = end;
+    var cursor: usize = kernel_end;
     for (low.free) |*address| { // write all low addresses as unused
         address.* = cursor;
         cursor = cursor + CHUNK_SIZE;
@@ -101,6 +101,7 @@ pub const MemoryStack = struct {
     }
 
     pub fn allocPage(this: *@This()) !usize {
+        tty.print("alloc left: {}", .{this.free.len});
         if ((this.free.len - this.free_top) == 0)
             return MemoryError.OutOfFreeMemory;
 
@@ -121,20 +122,20 @@ var page_directory: [*]PageDirectoryEntry = undefined;
 var page_tables: [1024][*]PageTableEntry = .{undefined} ** 1024;
 pub fn initPaging() !void {
     const page_directory_raw = try allocLowPage();
+    tty.print("rule: 0x{x}\n", .{page_directory_raw});
     page_directory = @as([*]PageDirectoryEntry, @ptrFromInt(page_directory_raw));
 
     const table_raw = try allocLowPage();
     page_tables[0] = @as([*]PageTableEntry, @ptrFromInt(table_raw));
 
-    for (page_tables[0][0..1024], 0..) |*entry, j| {
-        (entry.*).present = false;
+    for (page_tables[0][0..1023], 0..) |*entry, j| {
+        (entry.*).present = true;
         (entry.*).read_write = true;
         (entry.*).address = @intCast(j);
     }
 
     page_directory[0].present = true;
     page_directory[0].address = @intCast(table_raw / 4096);
-    //tty.print("{}: {any}\n", .{ i, page_directory[i] });
 
     tty.print("scrr: 0x{x}\n", .{@intFromPtr(&page_directory[0])});
     isr.interrupt_handlers[14] = &handler;
