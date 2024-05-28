@@ -1,3 +1,5 @@
+const std = @import("std");
+
 // Read byte from a port.
 pub inline fn in(comptime Type: type, port: u16) Type {
     return switch (Type) {
@@ -36,6 +38,43 @@ pub fn out(port: u16, data: anytype) void {
               [data] "{eax}" (data),
         ),
         else => @compileError("Only u8, u16 or u32, found: " ++ @typeName(@TypeOf(data))),
+    }
+}
+
+pub extern fn inCr0() usize;
+pub extern fn inCr1() usize;
+pub extern fn inCr2() usize;
+pub extern fn inCr3() usize;
+
+pub extern fn outCr0(data: usize) void;
+pub extern fn outCr1(data: usize) void;
+pub extern fn outCr2(data: usize) void;
+pub extern fn outCr3(data: usize) void;
+
+comptime { // generate I/O for Controll registers
+    const compFormat = std.fmt.comptimePrint;
+    for (0..4) |isr_i| { // generate isr plugs
+        asm (compFormat(
+                \\ .type inCr{}, @function
+                \\ .global inCr{}
+                \\
+                \\ inCr{}:
+                \\  mov %cr{}, %eax
+                \\  retn
+            , .{ isr_i, isr_i, isr_i, isr_i }));
+
+        asm (compFormat(
+                \\ .type outCr{}, @function
+                \\ .global outCr{}
+                \\
+                \\ outCr{}:
+                \\  push %ebp
+                \\  mov %esp, %ebp
+                \\  mov 8(%ebp), %eax
+                \\  mov %eax, %cr{}
+                \\  pop %ebp
+                \\  retn
+            , .{ isr_i, isr_i, isr_i, isr_i }));
     }
 }
 
