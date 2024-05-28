@@ -1,5 +1,6 @@
 const std = @import("std");
 const x86 = @import("x86.zig");
+const isr = @import("isr.zig");
 const tty = @import("tty.zig");
 
 pub extern const end: usize; //                           value at the end of the kernel, for the poition of the end it is @intFromPtr(&end).
@@ -43,15 +44,20 @@ pub fn alloc(size: usize) ![]usize {
     return high.alloc(size);
 }
 
-// returns a list of chunk in high memory.
+// returns a chunk in high memory.
 pub fn allocPage() !usize {
     return high.allocPage();
 }
 
 // returns a list of chunks to fit your requested size in low memory.
 // only use when there is a compatibility reason for needing to be in 2^24 address space.
-pub fn allocLow(size: usize) []usize {
+pub fn allocLow(size: usize) ![]usize {
     return low.alloc(size);
+}
+
+// returns a chunk in high memory.
+pub fn allocLowPage() !usize {
+    return low.allocPage();
 }
 
 // frees in high memory.
@@ -112,33 +118,29 @@ pub const MemoryStack = struct {
 };
 
 var page_directory: [*]PageDirectoryEntry = undefined;
-var page_table: [*]PageTableEntry = undefined;
-
+var page_tables: [1024][*]PageTableEntry = .{undefined} ** 1024;
 pub fn initPaging() !void {
-    const page_directory_raw = try allocPage();
+    const page_directory_raw = try allocLowPage();
     page_directory = @as([*]PageDirectoryEntry, @ptrFromInt(page_directory_raw));
-    page_table = @as([*]PageTableEntry, @ptrFromInt(try allocPage()));
 
-    for (page_table[0..1024]) |*entry| {
+    const table_raw = try allocLowPage();
+    page_tables[0] = @as([*]PageTableEntry, @ptrFromInt(table_raw));
+
+    for (page_tables[0][0..1024], 0..) |*entry, j| {
         (entry.*).present = false;
         (entry.*).read_write = true;
-        (entry.*).address = 1;
-    }
-
-    for (page_directory[0..1024]) |*entry| {
-        (entry.*).present = false;
-        (entry.*).read_write = true;
+        (entry.*).address = @intCast(j);
     }
 
     page_directory[0].present = true;
-    page_directory[0].address = 0;
+    page_directory[0].address = @intCast(table_raw / 4096);
+    //tty.print("{}: {any}\n", .{ i, page_directory[i] });
 
     tty.print("scrr: 0x{x}\n", .{@intFromPtr(&page_directory[0])});
+    isr.interrupt_handlers[14] = &handler;
 
     x86.outCr3(page_directory_raw); // put that page directory address into CR3
-    x86.outCr0(x86.inCr0() | 0x80000000); // set the paging bit in CR0 to 1
-
-    // go celebrate or something 'cause PAGING IS ENABLED!!!!!!!!!!
+    //x86.outCr0(x86.inCr0() | 0x80000000); // set the paging.
 }
 
 pub const PageDirectoryEntry = packed struct(u32) {
@@ -167,3 +169,21 @@ pub const PageTableEntry = packed struct(u32) {
     available: u3, // free for os to use
     address: u20,
 };
+
+pub fn handler(registers: isr.Registers) void {
+    const cr2 = asm ("mov %%cr2, %[value]"
+        : [value] "=r" (-> u32),
+    );
+    const present = (registers.error_code & 0x1) == 0;
+    const read_write = (registers.error_code & 0x2) > 0;
+    const user_mode = (registers.error_code & 0x4) > 0;
+    const reserved = (registers.error_code & 0x8) > 0;
+    tty.print("Page fault(0x{x}):", .{cr2});
+    defer tty.print("\n", .{});
+    if (present) tty.print(" present", .{});
+    if (read_write) tty.print(" read-only", .{});
+    if (user_mode) tty.print(" user-mode", .{});
+    if (reserved) tty.print(" reserved", .{});
+
+    @panic("Page fault");
+}
