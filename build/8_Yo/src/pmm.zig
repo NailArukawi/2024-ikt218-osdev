@@ -5,41 +5,42 @@ const tty = @import("tty.zig");
 
 pub extern const _kernel_end: usize; //                           value at the end of the kernel, for the poition of the end it is @intFromPtr(&end).
 pub const BLOCK_SIZE: usize = 4096; //                    size of a chunck of physical memory, same size as a page here.
-pub const MEMORY_MAX: usize = std.math.maxInt(usize); //  end of memory, Hardcoded to 4GiB until finding our platforms memory size is implimented.
+pub const MEMORY_MAX: usize = std.math.maxInt(usize) / 16; //  end of memory, Hardcoded to 4GiB until finding our platforms memory size is implimented.
 
 // OUR MEMORY IS:
-// (0 MiB               -> 1 MiB)               is kernel.
-// (1MiB              -> (1 MiB + PMM size)) is for storing what blocks are in use.
-// ((1 MiB + PMM size) -> end of memory)       is high memory.
+// (0 MiB    -> 1 MiB)               is kernel.
+// (1MiB     -> 16 Mib) is for storing what blocks are in use.
+// ((16 MiB) - > end of memory)       is high memory.
 
 // PhysicalMemoryManager
-var low: MemoryStack = undefined;
-var high: MemoryStack = undefined;
+var mem: MemoryStack = undefined;
 
 pub fn init() void {
-    const kernel_end: usize = @intFromPtr(&_kernel_end); // kernel end page aligned.
-    const mem_size: usize = (MEMORY_MAX - kernel_end) / BLOCK_SIZE;
-    tty.print("k: 0x{x}, m: 0x{x}\n", .{ kernel_end, mem_size });
+    const kernel_end: usize = @intFromPtr(&_kernel_end) + (4096 - @intFromPtr(&_kernel_end) % 4096) % 4096; // kernel end page aligned.
+    const skip = 16_777_216 / 16;
+    const mem_size: usize = (MEMORY_MAX - skip) / BLOCK_SIZE;
+    tty.print("k: 0x{x} m: 0x{x}\n", .{
+        kernel_end,
+        mem_size,
+    });
 
-    high = MemoryStack.createAt(kernel_end, mem_size);
-
-    for (high.free, 0..) |*address, i| // write all high addresses as unused
-        address.* = kernel_end + (i * BLOCK_SIZE);
+    mem = MemoryStack.createAt(kernel_end, skip, mem_size);
+    tty.print("({}) mem[0]: {}, mem[1]: {}, mem[2]: {}, mem[3]: {}\n", .{ mem.free.len, mem.free[0], mem.free[1], mem.free[2], mem.free[3] });
 }
 
 // returns a list of blocks to fit your requested size in high memory.
 pub fn alloc(size: usize) ![]usize {
-    return high.alloc(size);
+    return mem.alloc(size);
 }
 
 // returns a block in high memory.
 pub fn allocBlock() !usize {
-    return high.allocPage();
+    return mem.allocPage();
 }
 
 // frees in high memory.
 pub fn free(block: usize) void {
-    high.dealloc(block);
+    mem.dealloc(block);
 }
 
 pub const MemoryError = error{
@@ -50,11 +51,16 @@ pub const MemoryStack = struct {
     free: []usize,
     free_top: usize,
 
-    pub fn createAt(start: usize, size: usize) @This() {
-        return .{
-            .free = @as([*]usize, @ptrFromInt(start))[0..size],
+    pub fn createAt(base: usize, start: usize, size: usize) @This() {
+        const result = @This(){
+            .free = @as([*]usize, @ptrFromInt(base))[0..size],
             .free_top = 0,
         };
+
+        for (result.free, 0..) |*address, i| // write all high addresses as unused
+            address.* = start + (i * BLOCK_SIZE);
+
+        return result;
     }
 
     pub inline fn sizeOf(size: usize) usize {

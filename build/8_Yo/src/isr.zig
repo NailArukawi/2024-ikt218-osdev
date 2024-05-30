@@ -170,6 +170,7 @@ export fn isrHandler(registers: Registers) void {
     tty.setFG(.Yellow);
 
     tty.print("[INTERUPT: {}] {s}\n", .{ registers.error_code, exception_messages[registers.error_code] });
+    while (true) {}
 }
 
 extern fn irq0() void;
