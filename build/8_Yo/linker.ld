@@ -31,5 +31,5 @@ SECTIONS {
 		*(.bss .bss.*)
 	}
 
-   end = .;
+   _kernel_end = .;
 }
