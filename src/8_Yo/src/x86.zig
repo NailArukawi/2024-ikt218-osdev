@@ -127,14 +127,14 @@ pub inline fn storeGDT() GDTRegister {
     return gdt_ptr;
 }
 
-//const IDTRegister = @import("idt.zig").IDTRegister;
-//export var IDTR: [3]u16 = undefined;
+const IDTRegister = @import("idt.zig").IDTRegister;
+export var IDTR: [3]u16 = undefined;
 
 // Load a new Global Descriptor Table.
-//pub fn loadIDT(idtr: IDTRegister) void {
-//    IDTR = @bitCast(idtr);
-//
-//    asm volatile (
-//        \\ lidt (IDTR)
-//    );
-//}
+pub fn loadIDT(idtr: IDTRegister) void {
+    IDTR = @bitCast(idtr);
+
+    asm volatile (
+        \\ lidt (IDTR)
+    );
+}
