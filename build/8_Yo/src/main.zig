@@ -53,5 +53,6 @@ pub export fn kernelMain() noreturn {
     pit.sleepHlt(1000);
     tty.print("[{}]: Slept using interrupts.\n", .{pit.tick});
 
-    while (true) {}
+    tty.print("END OF DEMO! :^)\n", .{});
+    while (true) x86.hlt();
 }

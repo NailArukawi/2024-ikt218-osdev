@@ -15,7 +15,8 @@ pub fn init() void {
     const divider: u32 = 1193180 / 1000;
 
     x86.out(0x43, @as(u8, 0x36));
-    x86.out(0x43, @as(u16, @truncate(divider)));
+    x86.out(0x40, @as(u8, @truncate(divider)));
+    x86.out(0x40, @as(u8, @truncate(std.math.shr(u32, divider, 8))));
 }
 
 fn handlerPit0(_: isr.Registers) void {

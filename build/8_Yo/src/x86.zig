@@ -79,9 +79,8 @@ comptime { // generate I/O for Controll registers
 }
 
 // Halt the CPU.
-pub inline fn hlt() noreturn {
-    while (true)
-        asm volatile ("hlt");
+pub inline fn hlt() void {
+    asm volatile ("hlt");
 }
 
 // Disable interrupts.

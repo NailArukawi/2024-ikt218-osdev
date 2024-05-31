@@ -1,3 +1,5 @@
+const x86 = @import("x86.zig");
+
 const MAGIC: i32 = 0x1BADB002;
 const FLAGS: i32 = (1 << 0) | (1 << 1);
 
@@ -28,7 +30,7 @@ export fn _start() callconv(.Naked) noreturn {
         \\ hlt
     );
 
-    while (true) {}
+    while (true) x86.hlt();
 }
 
 export fn _stack_start() noreturn {
