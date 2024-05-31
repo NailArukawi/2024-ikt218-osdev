@@ -4,29 +4,25 @@ const x86 = @import("x86.zig");
 const isr = @import("isr.zig");
 const pmm = @import("pmm.zig");
 
-pub const PageDirectory = extern struct {
-    directory: *[1024]PageDirectoryEntry,
+pub fn createPD() ![1024]PageDirectoryEntry {
+    const block = try pmm.allocBlock();
+    tty.print("got block: {}\n", .{block});
+    @memset(@as([*]u32, @ptrFromInt(block))[0..1024], 0);
 
-    pub fn create() !@This() {
-        const block = try pmm.allocBlock();
-        tty.print("got block: {}\n", .{block});
-        @memset(@as([*]u32, @ptrFromInt(block))[0..1024], 0);
+    return @bitCast(block);
+}
 
-        return @bitCast(block);
-    }
+pub fn lookupPD(this: *[1024]PageDirectoryEntry, index: u10) *PageDirectoryEntry {
+    return &this[index];
+}
 
-    pub fn lookup(this: @This(), index: u10) *PageDirectoryEntry {
-        return &this.directory[index];
-    }
-
-    pub fn fullLookup(this: @This(), viritual: usize) usize {
-        const page_address_virt: PageAddressVirt = @bitCast(viritual);
-        const table = this.lookup(page_address_virt.table);
-        const page = table.get().lookup(page_address_virt.page);
-        //tty.print("full: {}:{}:{}\n", .{ page_address_virt.table, page_address_virt.page, page_address_virt.index });
-        return page.fullAddress(page_address_virt.index);
-    }
-};
+pub fn fullLookupPD(this: *[1024]PageDirectoryEntry, viritual: usize) usize {
+    const page_address_virt: PageAddressVirt = @bitCast(viritual);
+    const table = lookupPD(this, page_address_virt.table);
+    const page = lookupPT(table.get(), page_address_virt.page);
+    //tty.print("full: {}:{}:{}\n", .{ page_address_virt.table, page_address_virt.page, page_address_virt.index });
+    return page.fullAddress(page_address_virt.index);
+}
 
 pub const PageDirectoryEntry = packed struct(u32) {
     present: bool = false,
@@ -40,31 +36,31 @@ pub const PageDirectoryEntry = packed struct(u32) {
     available: u4 = 0, // free for os to use
     address: u20 = 0,
 
-    pub fn get(this: @This()) PageTable {
+    pub fn get(this: @This()) [*]PageTableEntry {
         const full_addr = @as(usize, @intCast(this.address));
-        return @bitCast(full_addr);
+        return @ptrFromInt(full_addr);
+    }
+
+    pub fn setAddress(this: *@This(), address: usize) void {
+        this.address = @truncate(std.math.shr(usize, address, 12));
     }
 };
 
-pub const PageTable = extern struct {
-    table: *[1024]PageTableEntry,
+pub fn createPT() ![*]PageTableEntry {
+    const block = try pmm.allocBlock();
+    tty.print("got block: 0x{X}\n", .{@intFromPtr(block)});
 
-    pub fn create() !@This() {
-        const block = try pmm.allocBlock();
-        tty.print("got block: {}\n", .{block});
+    const result: [*]PageTableEntry = @ptrCast(block);
 
-        const result: @This() = @bitCast(block);
+    for (0..1024) |i| // set all to 0
+        result[i] = @bitCast(@as(usize, 0));
 
-        for (0..1024) |i| // set all to 0
-            result.table[i] = PageTableEntry{};
+    return result;
+}
 
-        return result;
-    }
-
-    pub fn lookup(this: @This(), index: u10) *PageTableEntry {
-        return &this.table[index];
-    }
-};
+pub fn lookupPT(this: [*]PageTableEntry, index: u10) *PageTableEntry {
+    return &this[index];
+}
 
 pub const PageTableEntry = packed struct(u32) {
     present: bool = false,
@@ -86,6 +82,10 @@ pub const PageTableEntry = packed struct(u32) {
     pub fn get(this: @This()) usize {
         return @as(usize, @intCast(this.address));
     }
+
+    pub fn setAddress(this: *@This(), address: usize) void {
+        this.address = @truncate(std.math.shr(usize, address, 12));
+    }
 };
 
 pub const PageAddressVirt = packed struct(u32) {
@@ -101,75 +101,74 @@ pub const PageAddressPhys = packed struct(u32) {
     page: u20,
 };
 
-pub export var page_directory: PageDirectory = undefined;
+// does not need to be linked but it is.
+export var page_directory: [1024]PageDirectoryEntry align(4096) linksection(".bss") = undefined;
 
-export var pages_directory: [1024]usize align(4096) linksection(".bss") = undefined;
-export var page_table: [1024]usize align(4096) linksection(".bss") = undefined;
-
-pub fn init() void {
+pub fn init() !void {
     var address: usize = 0;
+    var page_table = try createPT();
 
     for (0..1024) |i| {
-        page_table[i] = address | 3;
+        page_table[i].present = true; //@bitCast(address | 3);
+        page_table[i].read_write = true;
+        page_table[i].setAddress(address);
         address = address + 4096;
     }
 
     // fill the first entry of the page directory
-    pages_directory[0] = @intFromPtr(&page_table[0]); // attribute set to: supervisor level, read/write, present(011 in binary)
-    pages_directory[0] = pages_directory[0] | 3;
+    page_directory[0].setAddress(@intFromPtr(&page_table[0])); // attribute set to: supervisor level, read/write, present(011 in binary)
+    page_directory[0].present = true;
+    page_directory[0].read_write = true;
 
     for (1..1024) |i| {
-        pages_directory[i] = 0 | 2; // attribute set to: supervisor level, read/write, not present(010 in binary)
+        page_directory[i].setAddress(0); // = @bitCast(@as(usize, 0) | 2); // attribute set to: supervisor level, read/write, not present(010 in binary)
+        page_directory[i].read_write = true;
     }
 
     isr.interrupt_handlers[14] = handler;
 
-    x86.outCr3(@intFromPtr(&pages_directory[0])); // put that page directory address into CR3
-    x86.outCr0(x86.inCr0() | 0x80000000); // set the paging.
+    switchPageDirectory(@intFromPtr(&page_directory[0]));
 }
 
 pub fn sinit() !void {
-    page_directory = try PageDirectory.create();
+    for (0..1024) |i| {
+        page_directory[i] = @bitCast(@as(usize, 0) | 2); // attribute set to: supervisor level, read/write, not present(010 in binary)
+    }
 
-    for (0..2048) |i| {
+    for (0..1024) |i| {
         try pageMap(i * 4096, i * 4096);
     }
 
-    for (0..2048) |i| {
-        if (i != page_directory.fullLookup(i))
+    for (0..1024) |i| {
+        if (i != fullLookupPD(&page_directory, i))
             testAddr(i);
     }
-
-    page_directory.lookup(0).get().lookup(0).user_super = true;
 
     //try pageMap(1023 * 4096, 1023 * 4096);
 
     isr.interrupt_handlers[14] = handler;
-    switchPageDirectory(@intFromPtr(&page_directory.directory.*[0]));
+    switchPageDirectory(@intFromPtr(&page_directory[0]));
 }
 
 pub fn testAddr(addr: usize) void {
-    tty.print("0x{x} == 0x{x}\n", .{ addr, page_directory.fullLookup(addr) });
+    tty.print("0x{x} == 0x{x}\n", .{ addr, fullLookupPD(&page_directory, addr) });
 }
 
 pub fn pageMap(physical: usize, viritual: usize) !void {
     const page_address_virt: PageAddressVirt = @bitCast(viritual);
     const page_address_phys: PageAddressPhys = @bitCast(physical);
 
-    const e = page_directory.lookup(page_address_virt.table);
-    //tty.print("e: {any}\n", .{e});
+    const e = lookupPD(&page_directory, page_address_virt.table);
     if (!e.present) {
-        const table = try PageTable.create();
-        //tty.print("t: {*}\n", .{table.table});
+        const table = try createPT();
 
-        const entry = page_directory.lookup(page_address_virt.table);
+        const entry = lookupPD(&page_directory, page_address_virt.table);
+        entry.setAddress(@intFromPtr(table)); // dunno=ø
         entry.present = true;
         entry.read_write = true; // makes it not readonly
-        entry.address = @truncate(@intFromPtr(table.table)); // dunno=ø
     }
-    //tty.print("e: {any}\n", .{e});
     const table = e.get();
-    const page = table.lookup(page_address_virt.page);
+    const page = lookupPT(table, page_address_virt.page);
 
     page.address = page_address_phys.page;
     page.present = true;

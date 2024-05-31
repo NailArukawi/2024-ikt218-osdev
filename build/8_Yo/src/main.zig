@@ -19,9 +19,9 @@ pub export fn kernelMain() noreturn {
     pmm.init();
     keyboard.init();
 
-    //vmm.init(); // catch @panic("Failed to init paging!");
+    vmm.init() catch @panic("Failed to init paging!");
     x86.sti(); // enable interupts
 
-    //tty.print("Hello, sludracks!\n\tthis is Yo!\n", .{});
+    tty.print("Hello, sludracks!\n\tthis is Yo!\n", .{});
     while (true) {}
 }

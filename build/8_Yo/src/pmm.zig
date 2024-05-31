@@ -15,25 +15,25 @@ pub const MEMORY_MAX: usize = std.math.maxInt(usize) / 16; //  end of memory, Ha
 var mem: MemoryStack = undefined;
 
 pub fn init() void {
-    const mem_size: usize = (MEMORY_MAX - _kernel_end) / BLOCK_SIZE;
+    const kernel_end = @intFromPtr(&_kernel_end);
+    const mem_size: usize = (MEMORY_MAX - kernel_end) / BLOCK_SIZE;
     tty.print("k: 0x{x} m: 0x{x}\n", .{
-        _kernel_end,
+        kernel_end,
         mem_size,
     });
 
-    mem = MemoryStack.createAt(_kernel_end, mem_size);
-    tty.print("({}) mem[0]: {}, mem[1]: {}, mem[2]: {}, mem[3]: {}\n", .{ mem.free.len, mem.free[0], mem.free[1], mem.free[2], mem.free[3] });
+    mem = MemoryStack.createAt(kernel_end, mem_size);
 }
 
-pub const BlockPtr = *align(4086) anyopaque;
+pub const BlockPtr = *align(4096) anyopaque;
 
 // returns a list of blocks to fit your requested size in high memory.
-pub fn alloc(size: usize) ![]usize {
+pub fn alloc(size: usize) ![]BlockPtr {
     return mem.alloc(size);
 }
 
 // returns a block in high memory.
-pub fn allocBlock() !usize {
+pub fn allocBlock() !BlockPtr {
     return mem.allocPage();
 }
 
@@ -47,17 +47,17 @@ pub const MemoryError = error{
 };
 
 pub const MemoryStack = struct {
-    free: []usize,
+    free: []BlockPtr,
     free_top: usize,
 
     pub fn createAt(base: usize, size: usize) @This() {
         const result = @This(){
-            .free = @as([*]usize, @ptrFromInt(base))[0..size],
+            .free = @as([*]BlockPtr, @ptrFromInt(base))[0..size],
             .free_top = std.math.divCeil(usize, size * @sizeOf(usize), BLOCK_SIZE) catch unreachable,
         };
 
         for (result.free, 0..) |*address, i| // write all high addresses as unused
-            address.* = base + (i * BLOCK_SIZE);
+            address.* = @ptrFromInt(base + (i * BLOCK_SIZE));
 
         return result;
     }
@@ -66,7 +66,7 @@ pub const MemoryStack = struct {
         return size * @sizeOf(usize);
     }
 
-    pub fn alloc(this: *@This(), size: usize) ![]usize {
+    pub fn alloc(this: *@This(), size: usize) ![]BlockPtr {
         if (((this.free.len - this.free_top) * BLOCK_SIZE) < size)
             return MemoryError.OutOfFreeMemory;
 
@@ -77,7 +77,7 @@ pub const MemoryStack = struct {
         return this.free[old_free_top..this.free_top];
     }
 
-    pub fn allocPage(this: *@This()) !usize {
+    pub fn allocPage(this: *@This()) !BlockPtr {
         if ((this.free.len - this.free_top) == 0)
             return MemoryError.OutOfFreeMemory;
 
