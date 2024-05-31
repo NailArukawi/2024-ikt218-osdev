@@ -120,6 +120,8 @@ pub const Block = extern struct {
 
 // ZIG HAS A ALLOCATOR INTERFACE
 // TODO WRAP THIS IN THAT INTERFACE!
+// TODO NO BLOCK REUSE
+// TODO MAPPING SHOULD HAPPEN IN HERE
 pub const KernelAllocator = struct { // todo support larger than 127 line allocations
     current_block: ?*Block = null,
     blocks: [1023]?*Block = .{null} ** 1023, // hardcoded max is bad, todo make dynamic

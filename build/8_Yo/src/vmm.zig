@@ -108,23 +108,26 @@ pub fn init() !void {
     tty.print("Setup vmm...\t", .{});
     defer tty.print("OK\n", .{});
     var address: usize = 0;
-    var page_table = try createPT();
 
     for (0..1024) |i| {
-        page_table[i].present = true; //@bitCast(address | 3);
-        page_table[i].read_write = true;
-        page_table[i].setAddress(address);
-        address = address + 4096;
-    }
-
-    // fill the first entry of the page directory
-    page_directory[0].setAddress(@intFromPtr(&page_table[0])); // attribute set to: supervisor level, read/write, present(011 in binary)
-    page_directory[0].present = true;
-    page_directory[0].read_write = true;
-
-    for (1..1024) |i| {
         page_directory[i].setAddress(0); // = @bitCast(@as(usize, 0) | 2); // attribute set to: supervisor level, read/write, not present(010 in binary)
         page_directory[i].read_write = true;
+    }
+
+    for (0..8) |t| {
+        var page_table = try createPT();
+
+        for (0..1024) |i| {
+            page_table[i].present = true; //@bitCast(address | 3);
+            page_table[i].read_write = true;
+            page_table[i].setAddress(address);
+            address = address + 4096;
+        }
+
+        // fill the first entry of the page directory
+        page_directory[t].setAddress(@intFromPtr(&page_table[0])); // attribute set to: supervisor level, read/write, present(011 in binary)
+        page_directory[t].present = true;
+        page_directory[t].read_write = true;
     }
 
     isr.interrupt_handlers[14] = handlerPageFault;
