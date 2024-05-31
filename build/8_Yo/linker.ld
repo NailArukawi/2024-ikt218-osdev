@@ -31,5 +31,6 @@ SECTIONS {
 		*(.bss .bss.*)
 	}
 
+	. = ALIGN(4k);
    _kernel_end = .;
 }

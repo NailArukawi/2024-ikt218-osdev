@@ -8,25 +8,24 @@ pub const BLOCK_SIZE: usize = 4096; //                    size of a chunck of ph
 pub const MEMORY_MAX: usize = std.math.maxInt(usize) / 16; //  end of memory, Hardcoded to 4GiB until finding our platforms memory size is implimented.
 
 // OUR MEMORY IS:
-// (0 MiB    -> 1 MiB)               is kernel.
-// (1MiB     -> 16 Mib) is for storing what blocks are in use.
-// ((16 MiB) - > end of memory)       is high memory.
+// (0 MiB    -> 4 MiB)               is kernel.
+// (4 MiB - > end of memory)       is high memory.
 
 // PhysicalMemoryManager
 var mem: MemoryStack = undefined;
 
 pub fn init() void {
-    const kernel_end: usize = @intFromPtr(&_kernel_end) + (4096 - @intFromPtr(&_kernel_end) % 4096) % 4096; // kernel end page aligned.
-    const skip = 16_777_216 / 16;
-    const mem_size: usize = (MEMORY_MAX - skip) / BLOCK_SIZE;
+    const mem_size: usize = (MEMORY_MAX - _kernel_end) / BLOCK_SIZE;
     tty.print("k: 0x{x} m: 0x{x}\n", .{
-        kernel_end,
+        _kernel_end,
         mem_size,
     });
 
-    mem = MemoryStack.createAt(kernel_end, skip, mem_size);
+    mem = MemoryStack.createAt(_kernel_end, mem_size);
     tty.print("({}) mem[0]: {}, mem[1]: {}, mem[2]: {}, mem[3]: {}\n", .{ mem.free.len, mem.free[0], mem.free[1], mem.free[2], mem.free[3] });
 }
+
+pub const BlockPtr = *align(4086) anyopaque;
 
 // returns a list of blocks to fit your requested size in high memory.
 pub fn alloc(size: usize) ![]usize {
@@ -51,14 +50,14 @@ pub const MemoryStack = struct {
     free: []usize,
     free_top: usize,
 
-    pub fn createAt(base: usize, start: usize, size: usize) @This() {
+    pub fn createAt(base: usize, size: usize) @This() {
         const result = @This(){
             .free = @as([*]usize, @ptrFromInt(base))[0..size],
-            .free_top = 0,
+            .free_top = std.math.divCeil(usize, size * @sizeOf(usize), BLOCK_SIZE) catch unreachable,
         };
 
         for (result.free, 0..) |*address, i| // write all high addresses as unused
-            address.* = start + (i * BLOCK_SIZE);
+            address.* = base + (i * BLOCK_SIZE);
 
         return result;
     }
