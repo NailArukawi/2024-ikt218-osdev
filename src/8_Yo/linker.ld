@@ -9,7 +9,8 @@ VERSION {
 
 SECTIONS {
 	. = 1M;
-	
+	_kernel_start = .;
+
 	.multiboot : ALIGN(4K) {
 		KEEP(*(.multiboot))
 	}
