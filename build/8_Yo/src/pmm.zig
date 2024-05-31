@@ -15,12 +15,14 @@ pub const MEMORY_MAX: usize = std.math.maxInt(usize) / 16; //  end of memory, Ha
 var mem: MemoryStack = undefined;
 
 pub fn init() void {
+    tty.print("Setup pmm...\t", .{});
+    defer tty.print("OK\n", .{});
     const kernel_end = @intFromPtr(&_kernel_end);
     const mem_size: usize = (MEMORY_MAX - kernel_end) / BLOCK_SIZE;
-    tty.print("k: 0x{x} m: 0x{x}\n", .{
-        kernel_end,
-        mem_size,
-    });
+    //tty.print("k: 0x{x} m: 0x{x}\n", .{
+    //    kernel_end,
+    //    mem_size,
+    //});
 
     mem = MemoryStack.createAt(kernel_end, mem_size);
 }

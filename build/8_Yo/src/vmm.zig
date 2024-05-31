@@ -6,7 +6,7 @@ const pmm = @import("pmm.zig");
 
 pub fn createPD() ![1024]PageDirectoryEntry {
     const block = try pmm.allocBlock();
-    tty.print("got block: {}\n", .{block});
+    //tty.print("got block: {}\n", .{block});
     @memset(@as([*]u32, @ptrFromInt(block))[0..1024], 0);
 
     return @bitCast(block);
@@ -48,7 +48,7 @@ pub const PageDirectoryEntry = packed struct(u32) {
 
 pub fn createPT() ![*]PageTableEntry {
     const block = try pmm.allocBlock();
-    tty.print("got block: 0x{X}\n", .{@intFromPtr(block)});
+    //tty.print("got block: 0x{X}\n", .{@intFromPtr(block)});
 
     const result: [*]PageTableEntry = @ptrCast(block);
 
@@ -105,6 +105,8 @@ pub const PageAddressPhys = packed struct(u32) {
 export var page_directory: [1024]PageDirectoryEntry align(4096) linksection(".bss") = undefined;
 
 pub fn init() !void {
+    tty.print("Setup vmm...\t", .{});
+    defer tty.print("OK\n", .{});
     var address: usize = 0;
     var page_table = try createPT();
 
