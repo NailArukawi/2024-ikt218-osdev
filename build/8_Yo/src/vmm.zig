@@ -127,28 +127,8 @@ pub fn init() !void {
         page_directory[i].read_write = true;
     }
 
-    isr.interrupt_handlers[14] = handler;
+    isr.interrupt_handlers[14] = handlerPageFault;
 
-    switchPageDirectory(@intFromPtr(&page_directory[0]));
-}
-
-pub fn sinit() !void {
-    for (0..1024) |i| {
-        page_directory[i] = @bitCast(@as(usize, 0) | 2); // attribute set to: supervisor level, read/write, not present(010 in binary)
-    }
-
-    for (0..1024) |i| {
-        try pageMap(i * 4096, i * 4096);
-    }
-
-    for (0..1024) |i| {
-        if (i != fullLookupPD(&page_directory, i))
-            testAddr(i);
-    }
-
-    //try pageMap(1023 * 4096, 1023 * 4096);
-
-    isr.interrupt_handlers[14] = handler;
     switchPageDirectory(@intFromPtr(&page_directory[0]));
 }
 
@@ -182,19 +162,13 @@ fn switchPageDirectory(directory: usize) void {
     x86.outCr0(x86.inCr0() | 0x80000000); // set the paging.
 }
 
-pub fn handler(registers: isr.Registers) void {
-    const cr2 = asm ("mov %%cr2, %[value]"
-        : [value] "=r" (-> u32),
-    );
-    const present = (registers.error_code & 0x1) == 0;
-    const read_write = (registers.error_code & 0x2) > 0;
-    const user_mode = (registers.error_code & 0x4) > 0;
-    const reserved = (registers.error_code & 0x8) > 0;
+pub fn handlerPageFault(registers: isr.Registers) void {
+    const cr2 = x86.inCr2();
     tty.print("Page fault! [ ", .{});
-    if (present) tty.print("present ", .{});
-    if (read_write) tty.print("read-only ", .{});
-    if (user_mode) tty.print("user-mode ", .{});
-    if (reserved) tty.print("reserved ", .{});
+    if ((registers.error_code & 0x1) == 0) tty.print("present ", .{});
+    if ((registers.error_code & 0x2) > 0) tty.print("read-only ", .{});
+    if ((registers.error_code & 0x4) > 0) tty.print("user-mode ", .{});
+    if ((registers.error_code & 0x8) > 0) tty.print("reserved ", .{});
     tty.print("] at 0x{x}\n", .{cr2});
     @panic("Page fault");
 }

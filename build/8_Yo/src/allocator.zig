@@ -63,6 +63,17 @@ const BlockMeta = extern struct {
         this.info.start += lines;
         return result;
     }
+
+    pub fn free(this: *@This(), lines: u8) u8 {
+        if (this.info.start - 1 == 0) // todo check if correct
+            return 0; // todo error none found
+
+        const mark_start = this.info.start;
+        const mark_end = this.info.start + lines;
+        const range = std.bit_set.Range{ .start = mark_start, .end = mark_end };
+        this.marked.setRangeValue(range, true);
+        return 1;
+    }
 };
 
 // Block contains 128 lines filling 4096B making each line is 32 bytes.
@@ -100,8 +111,15 @@ pub const Block = extern struct {
 
         return @ptrCast(&this.body[room]);
     }
+
+    pub fn free(this: *@This(), len: usize) void {
+        const lines: u8 = @intCast(len / 32);
+        _ = this.meta.free(lines);
+    }
 };
 
+// ZIG HAS A ALLOCATOR INTERFACE
+// TODO WRAP THIS IN THAT INTERFACE!
 pub const KernelAllocator = struct { // todo support larger than 127 line allocations
     current_block: ?*Block = null,
     blocks: [1023]?*Block = .{null} ** 1023, // hardcoded max is bad, todo make dynamic
@@ -121,11 +139,44 @@ pub const KernelAllocator = struct { // todo support larger than 127 line alloca
     }
 
     // pub fn alloc(_: *anyopaque, len: usize, _: u8, _: usize) ?[*]u8;
-
     pub fn alloc(this: *@This(), len: usize) ?[*]u8 {
         if (this.current_block == null)
             this.allocBlock() catch return null;
 
-        return this.current_block.?.alloc(len);
+        var result = this.current_block.?.alloc(len);
+        if (result == null) {
+            this.allocBlock() catch return null;
+
+            result = this.current_block.?.alloc(len);
+            if (result == null)
+                return null;
+        }
+
+        return result;
+    }
+
+    pub fn create(this: *@This(), t: type) ?*t {
+        if (this.current_block == null)
+            this.allocBlock() catch return null;
+
+        var result = this.current_block.?.alloc(@sizeOf(t));
+        if (result == null) {
+            this.allocBlock() catch return null;
+
+            result = this.current_block.?.alloc(@sizeOf(t));
+            if (result == null)
+                return null;
+        }
+
+        return @ptrCast(@alignCast(result.?));
+    }
+
+    pub fn free(this: *@This(), ptr: anytype, len: usize) void {
+        _ = this;
+        const block_base: usize = @intFromPtr(ptr) - (@intFromPtr(ptr) % 4096);
+        var block: *Block = @ptrFromInt(block_base);
+
+        tty.print("free: (0x{x})(0x{x})\n", .{ @intFromPtr(ptr), block_base });
+        block.free(len);
     }
 };
